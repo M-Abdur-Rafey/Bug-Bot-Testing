@@ -9,3 +9,5 @@ function that subtracts 2 variables.
 function that subtracts 2 variables but name is addition
 
 # Multiplication.cpp
+
+function that multiplies 2 variables

@@ -3201,52 +3201,113 @@ class Assistant:
 
         try:
             async def on_open(self, open, **kwargs):
-                print(f"Deepgram connection opened successfully")
+                try:
+                    if isinstance(open, bytes):
+                        print(f"[Deepgram] on_open received bytes. Skipping. Length: {len(open)}")
+                        return
+                    print(f"Deepgram connection opened successfully")
+                except Exception as e:
+                    print(f"[Deepgram] Exception in on_open: {e} | type(open): {type(open)}")
 
             async def on_message(self_handler, result, **kwargs):
-                sentence = result.channel.alternatives[0].transcript
-                
-                if len(sentence) == 0:
-                    return
-                if result.is_final:
-                    self.transcript_parts.append(sentence)
-
-                    if self.stime == 0:
-                        self.stime = result.channel.alternatives[0].words[0].start
-
-                    if self.mode == 'speed':
-                        # print('Sending Speed')
-                        await self.transcript_queue.put({'type': 'transcript_final', 'content': sentence, 'time': float(result.channel.alternatives[0].words[0].start)})
-                    elif result.speech_final:
-                        # print('Sending Accuracy')
-                        # print()
-                        full_transcript = ' '.join(self.transcript_parts)
-                        self.transcript_parts = []
-                        self.stime = 0
-                        await self.transcript_queue.put({'type': 'transcript_final', 'content': full_transcript, 'time': float(self.stime)})
-                else:
-                    await self.transcript_queue.put({'type': 'transcript_interim', 'content': sentence, 'time': 0})
+                try:
+                    if self.finish_event.is_set():
+                        print("[Deepgram] Finish event set, skipping message processing.")
+                        return
+                    if isinstance(result, bytes):
+                        print(f"[Deepgram] Received bytes in on_message. Skipping. Length: {len(result)}")
+                        return
+                    if not hasattr(result, 'channel'):
+                        print(f"[Deepgram] Received object without 'channel' attribute in on_message. Type: {type(result)}. Content: {str(result)[:200]}")
+                        return
+                    sentence = result.channel.alternatives[0].transcript
+                    if len(sentence) == 0:
+                        return
+                    if getattr(result, 'is_final', False):
+                        self.transcript_parts.append(sentence)
+                        if self.stime == 0:
+                            self.stime = result.channel.alternatives[0].words[0].start
+                        if self.mode == 'speed':
+                            await self.transcript_queue.put({'type': 'transcript_final', 'content': sentence, 'time': float(result.channel.alternatives[0].words[0].start)})
+                        elif getattr(result, 'speech_final', False):
+                            full_transcript = ' '.join(self.transcript_parts)
+                            self.transcript_parts = []
+                            self.stime = 0
+                            await self.transcript_queue.put({'type': 'transcript_final', 'content': full_transcript, 'time': float(self.stime)})
+                    else:
+                        await self.transcript_queue.put({'type': 'transcript_interim', 'content': sentence, 'time': 0})
+                except Exception as e:
+                    print(f"Error processing transcription message: {e} | type(result): {type(result)} | content: {str(result)[:200]}")
 
             async def on_metadata(self, metadata, **kwargs):
-                print(f"Metadata: {metadata}")
+                try:
+                    if isinstance(metadata, bytes):
+                        print(f"[Deepgram] on_metadata received bytes. Skipping. Length: {len(metadata)}")
+                        return
+                    print(f"Metadata received: {metadata}")
+                except Exception as e:
+                    print(f"[Deepgram] Exception in on_metadata: {e} | type(metadata): {type(metadata)}")
 
             async def on_speech_started(self, speech_started, **kwargs):
-                print(f"Speech Started")
+                try:
+                    if isinstance(speech_started, bytes):
+                        print(f"[Deepgram] on_speech_started received bytes. Skipping. Length: {len(speech_started)}")
+                        return
+                    print(f"Speech Started")
+                except Exception as e:
+                    print(f"[Deepgram] Exception in on_speech_started: {e} | type(speech_started): {type(speech_started)}")
 
             async def on_utterance_end(self_handler, utterance_end, **kwargs):
-                if self.mode != 'speed' and len(self.transcript_parts) > 0:
-                    full_transcript = ' '.join(self.transcript_parts)
-                    self.transcript_parts = []
-                    await self.transcript_queue.put({'type': 'transcript_final', 'content': full_transcript})
+                try:
+                    if isinstance(utterance_end, bytes):
+                        print(f"[Deepgram] on_utterance_end received bytes. Skipping. Length: {len(utterance_end)}")
+                        return
+                    if self.mode != 'speed' and len(self.transcript_parts) > 0:
+                        full_transcript = ' '.join(self.transcript_parts)
+                        self.transcript_parts = []
+                        await self.transcript_queue.put({'type': 'transcript_final', 'content': full_transcript})
+                except Exception as e:
+                    print(f"Error processing utterance end: {e}")
 
             async def on_close(self, close, **kwargs):
-                print(f"Deepgram connection closed")
+                try:
+                    if isinstance(close, bytes):
+                        print(f"[Deepgram] on_close received bytes. Skipping. Length: {len(close)}")
+                        return
+                    print(f"Deepgram connection closed: {close}")
+                    if not self.finish_event.is_set():
+                        print("Unexpected Deepgram disconnection, attempting to reconnect...")
+                        try:
+                            await asyncio.sleep(1)  # Brief delay before reconnect
+                            await self.transcribe_audio()  # Attempt to reconnect
+                        except Exception as e:
+                            print(f"Reconnection attempt failed: {e}")
+                except Exception as e:
+                    print(f"[Deepgram] Exception in on_close: {e} | type(close): {type(close)}")
 
             async def on_error(self, error, **kwargs):
-                print(f"Deepgram error: {error}")
+                try:
+                    if isinstance(error, bytes):
+                        print(f"[Deepgram] on_error received bytes. Skipping. Length: {len(error)}")
+                        return
+                    print(f"Deepgram error: {error}")
+                    if not self.finish_event.is_set():
+                        await self.websocket.send_json({
+                            'type': 'transcription_error',
+                            'content': f'Transcription error occurred: {error}',
+                            'error_code': 'DEEPGRAM_ERROR'
+                        })
+                except Exception as e:
+                    print(f"[Deepgram] Exception in on_error: {e} | type(error): {type(error)}")
 
             async def on_unhandled(self, unhandled, **kwargs):
-                print(f"Unhandled Deepgram message: {unhandled}")
+                try:
+                    if isinstance(unhandled, bytes):
+                        print(f"[Deepgram] on_unhandled received bytes. Skipping. Length: {len(unhandled)}")
+                        return
+                    print(f"Unhandled Deepgram message: {unhandled}")
+                except Exception as e:
+                    print(f"[Deepgram] Exception in on_unhandled: {e} | type(unhandled): {type(unhandled)}")
 
             # Use the new asyncwebsocket instead of deprecated asynclive
             try:
@@ -3284,14 +3345,48 @@ class Assistant:
 
             try:
                 while not self.finish_event.is_set():
-                    # Receive audio stream from the client and send it to Deepgram to transcribe it
-                    data = await self.websocket.receive_bytes()
-                    await dg_connection.send(data)
+                    try:
+                        # Add timeout to prevent hanging
+                        data = await asyncio.wait_for(self.websocket.receive_bytes(), timeout=30.0)
+                        if data:  # Check if data is not empty
+                            await dg_connection.send(data)
+                        else:
+                            print("Received empty data from WebSocket")
+                    except asyncio.TimeoutError:
+                        if not self.finish_event.is_set():
+                            continue  # Keep listening if session is still active
+                        break  # Break if session is finished
+                    except Exception as e:
+                        print(f"Error receiving/sending data: {e}")
+                        if not self.finish_event.is_set():
+                            await asyncio.sleep(0.1)  # Brief pause before retry
+                            continue
+                        break
+                    # Break the loop if the connection is closed
+                    if self.finish_event.is_set():
+                        print("[Deepgram] Finish event set in main loop, breaking.")
+                        break
+                print("[Deepgram] Main loop exited")
+            except Exception as e:
+                print(f"Error in transcription loop: {e}")
+                raise
             finally:
-                await dg_connection.finish()
+                print("Closing Deepgram connection...")
+                try:
+                    await dg_connection.finish()
+                except Exception as e:
+                    print(f"Error closing Deepgram connection: {e}")
 
         except Exception as e:
-            print(f"Deepgram transcription error: {str(e)}")
+            print(f"[Deepgram] OUTER EXCEPTION: {e} | type: {type(e)}")
+            import traceback
+            traceback.print_exc()
+            if not self.finish_event.is_set():
+                await self.websocket.send_json({
+                    'type': 'transcription_error',
+                    'content': f'Transcription service encountered an error: {e}. Please try again.',
+                    'error_code': 'DEEPGRAM_ERROR'
+                })
             # Don't raise the exception, just log it to prevent the whole system from crashing
             print("Continuing without Deepgram transcription...")
 

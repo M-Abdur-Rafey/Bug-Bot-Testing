@@ -3,10 +3,33 @@ from datetime import datetime
 import logging
 from Packages import Model_table
 
+# Default model table when database is unavailable
+DEFAULT_MODEL_TABLE = {
+    "openai": {
+        "gpt-4o-mini": 0.5,
+        "gpt-4o": 2.0,
+        "gpt-3.5-turbo": 0.3,
+        "o1-mini": 1.0,
+        "o1-preview": 5.0
+    },
+    "gemini": {
+        "gemini-1.5-pro-latest": 1.5,
+        "gemini-2.0-flash": 0.8,
+        "gemini-1.5-flash": 0.5
+    },
+    "claude": {
+        "claude-3-5-sonnet-20241022": 3.0,
+        "claude-3-5-haiku-20241022": 1.0
+    }
+}
 
 # Credit cost per minute for each model (in credits) using name and cost like "o3-mini": 0.5
 Credit_cost_per_minute = {}
-for provider, models in Model_table.items():
+
+# Use Model_table if available, otherwise use default
+model_data = Model_table if Model_table is not None else DEFAULT_MODEL_TABLE
+
+for provider, models in model_data.items():
     for model, cost in models.items():
         Credit_cost_per_minute[model] = cost
 
